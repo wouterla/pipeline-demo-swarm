@@ -1,0 +1,34 @@
+- defaults:
+    name: global
+    project-type: freestyle
+    properties:
+      - delivery-pipeline:
+          stage: '{pipeline-stage}'
+    publishers:
+      - trigger-parameterized-builds:
+          - project: '{next-job}'
+            condition: "UNSTABLE_OR_BETTER"
+            git-revision: true
+            current-parameters: true
+            trigger-with-no-params: true
+
+- publisher:
+    name: trigger-with-params
+    publishers:
+      - trigger-parameterized-builds:
+        - project: '{next-job}'
+          condition: "UNSTABLE_OR_BETTER"
+          predefined-parameters: |
+            BUILD_NUM=$BUILD_NUMBER
+            PIPELINE_GIT_HASH=$GIT_COMMIT
+          git-revision: true
+          current-parameters: true
+
+- job:
+    name: 'done'
+    project-type: freestyle
+    properties:
+      - delivery-pipeline:
+          stage: 'production'
+    scm: []
+    publishers: []

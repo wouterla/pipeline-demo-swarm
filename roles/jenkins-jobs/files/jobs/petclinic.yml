@@ -1,0 +1,216 @@
+- defaults:
+    name: petclinic
+    project-type: freestyle
+    wrappers:
+      - ssh-agent-credentials:
+          user: 'XXXXXXXXXXXXXX'
+    properties:
+      - delivery-pipeline:
+          stage: '{pipeline-stage}'
+    scm:
+      - git:
+          name: origin
+          url: '{gitrepo}'
+          skip-tag: true
+          wipe-workspace: false
+          branches:
+            - '{branch}'
+    publishers:
+      - trigger-with-params:
+          next-job: '{next-job}'
+
+- builder:
+    name: java
+    builders:
+      - maven-target:
+          goals: '{goals}'
+
+- job-template:
+    name: '{name}-test'
+    defaults: petclinic
+    builders:
+      - maven-target:
+          goals: '{goals}'
+
+- job-template:
+    name: '{name}-package'
+    defaults: petclinic
+    builders:
+      - maven-target:
+          goals: '{goals}'
+
+- job-template:
+    name: '{name}-start'
+    defaults: petclinic
+
+- job-template:
+    name: '{name}-create-docker-image'
+    defaults: petclinic
+    builders:
+      - maven-target:
+          goals: 'clean install'
+      - shell: |
+          #!/bin/bash
+          set -x
+          set +e
+          #export DOCKER_HOST=${{DOCKER_HOST}}
+          unset DOCKER_HOST
+
+          echo "Clean..."
+          rm -rf build && mkdir build
+
+          echo "Copying docker files"
+          cp docker/* target/
+
+          echo "Running docker"
+          cd target/
+          docker build -t wouterla/docker-{name} .
+
+          echo "Pushing docker image to repository"
+          #docker push wouterla/docker-{name}
+
+- builder:
+    name: deploy
+    defaults: petclinic
+    builders:
+      - shell: |
+          #!/bin/bash
+          set -x
+          set +e
+          #export DOCKER_HOST=${{DOCKER_HOST}}
+          unset DOCKER_HOST
+
+          # Ensure network exists
+
+          if docker network inspect {env};
+          then
+            echo "network {env} Found";
+          else
+            docker network create {env};
+          fi;
+
+          # For now, ensure that the container is removed. Should not be done in
+          # production, but makes testing the pipeline much easier
+          docker stop {name}-{env}-${{PIPELINE_GIT_HASH}}
+          docker rm  {name}-{env}-${{PIPELINE_GIT_HASH}}
+
+          docker run --net={env} -d --expose 8080 \
+            --label servicename={name} \
+            --label serviceversion=${{PIPELINE_GIT_HASH}} \
+            --label serviceenv={env} \
+            --name {name}-{env}-${{PIPELINE_GIT_HASH}} \
+            -t wouterla/docker-{name}
+
+- job-template:
+    name: '{name}-deploy-test'
+    builders:
+      - deploy:
+          name: '{name}'
+          env: '{env}'
+
+- job-template:
+    name: '{name}-deploy-production'
+    builders:
+      - deploy:
+          name: '{name}'
+          env: '{env}'
+
+- builder:
+    name: release
+    defaults: petclinic
+    builders:
+      - shell: |
+          #!/bin/bash
+          set -x
+          set -e
+          #export DOCKER_HOST=${{DOCKER_HOST}}
+          unset DOCKER_HOST
+          export BACKEND={name}-{env}-${{PIPELINE_GIT_HASH}}
+          export ENV={env}
+          export ETCDCTL_PEERS=http://etcd-{env}.{env}:4001
+          echo "BACKEND=${{BACKEND}}"
+
+          # Temporarily connect to the {env} network so we can talk to etcd
+          # Could be replaced by a pre-configured ip address for test, but
+          # that would be less flexible.
+          set +e # If this fails, we're already connected?
+          docker network connect {env} jenkins
+          set -e
+
+          # Ensure backend exists
+          etcdctl set /vulcand/backends/${{BACKEND}}/backend '{{"Type": "http"}}'
+
+          # Add new servers
+          # Gather endpoints
+          # Find all containers with the service and versions labels we want
+          CONTAINERS=$(docker ps --filter=label=servicename={name} \
+            --filter=label=serviceversion=${{PIPELINE_GIT_HASH}} \
+            --filter=label=serviceenv={env} \
+            --format={{{{.ID}}}})
+
+          COUNT=0
+          for CONTAINER in $CONTAINERS; do
+            IP=$(docker inspect --format='{{{{json .NetworkSettings.Networks.{env}.IPAddress}}}}' $CONTAINER | tr -d '"')
+            #PORT=$(docker inspect --format='{{{{(index (index .NetworkSettings.Ports "8080/tcp") 0).HostPort}}}}' $CONTAINER)
+            PORT=8080
+
+            echo "Adding $CONTAINER with IP=$IP and PORT=$PORT as server for {name}, ${{PIPELINE_GIT_HASH}}"
+
+            COUNT=$((COUNT+1))
+            etcdctl set /vulcand/backends/${{BACKEND}}/servers/srv${{COUNT}} '{{"URL": "http://'${{IP}}':'${{PORT}}'"}}'
+          done
+          echo "Instances added: $COUNT"
+
+          # Set up frontend
+          etcdctl set /vulcand/frontends/{name}-{env}/frontend '{{"Type": "http", "BackendId": "'${{BACKEND}}'", "Route": "Host(`{name}.{env}`) && PathRegexp(`/.*`)"}}'
+          # Above should be extended to "Route": "Host("<servicename>") && PathRegexp(\"/.*\")" ? And also add Method (GET/POST)?
+
+          # Disconnect from {env} network again
+          docker network disconnect {env} jenkins
+
+- job-template:
+    name: '{name}-release-test'
+    builders:
+      - release:
+          name: '{name}'
+          env: '{env}'
+
+- job-template:
+    name: '{name}-release-production'
+    builders:
+      - release:
+          name: '{name}'
+          env: '{env}'
+
+- project:
+    name: petclinic
+    gitrepo: 'https://github.com/wouterla/spring-petclinic.git'
+    branch: 'master'
+    jobs:
+      - '{name}-start':
+          pipeline-stage: 'build'
+          next-job: 'petclinic-test'
+      - '{name}-test':
+          goals: 'install'
+          pipeline-stage: 'build'
+          next-job: 'petclinic-create-docker-image'
+      - '{name}-create-docker-image':
+          pipeline-stage: 'build'
+          next-job: 'done'
+          next-job: 'petclinic-deploy-test'
+      - '{name}-deploy-test':
+          pipeline-stage: 'test'
+          env: 'test'
+          next-job: '{name}-release-test'
+      - '{name}-release-test':
+          pipeline-stage: 'test'
+          env: 'test'
+          next-job: '{name}-deploy-production'
+      - '{name}-deploy-production':
+          pipeline-stage: 'production'
+          env: 'production'
+          next-job: '{name}-release-production'
+      - '{name}-release-production':
+          pipeline-stage: 'production'
+          env: 'production'
+          next-job: 'done'

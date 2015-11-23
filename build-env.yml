@@ -1,0 +1,13 @@
+jenkins:
+  image: wouterla/docker-jenkins
+  expose:
+    - "8080"
+  environment:
+    - "constraint:container!=democoreosjenkins_jenkins*"
+
+jenkins-job-builder:
+  image: wouterla/docker-jenkins-job-builder
+  environment:
+    - "constraint:container==democoreosjenkins_jenkins*"
+  extra_hosts:
+    - "jenkins:${HOST_IP}"

@@ -1,0 +1,27 @@
+TODO
+
+- Manual steps first to full env, then jenkins!
+
+- create network (single host) per environment --> script, done
+  check network connect?
+- deploy etcd for an env --> done
+- deploy vulcand for an env --> done
+- deploy petclinic for an env --> done
+- add petclinic to vulcand --> done
+
+
+- add extra env (acc) and deploy all --> done
+
+- add 'build' env for jenkins
+- deploy jenkins
+- bootstrap jenkins-jobs
+- provide access to other networks for jenkins (docker host)
+- full pipeline view
+
+NEXT:
+- run a test on petclinic
+- create multi-host setup using docker-machine
+  - configure IPs for hosts in jenkins (DOCKER_HOST, vulcan/etcd IPs will need to bind ports again? Or is that transparent?)
+- create network (multi host) per environment
+- add local registry so we can push?
+- remove vagrant credentials from jenkins?

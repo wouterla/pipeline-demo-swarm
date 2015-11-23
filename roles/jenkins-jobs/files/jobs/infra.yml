@@ -1,0 +1,142 @@
+
+- builder:
+    name: 'create-network'
+    builders:
+      - shell: |
+          #!/bin/bash
+          set -x
+          set -e
+          #export DOCKER_HOST=${{DOCKER_HOST}}
+          unset DOCKER_HOST
+
+          if docker network inspect {env};
+          then
+            echo "network {env} Found";
+          else
+            docker network create {env};
+          fi;
+
+- job-template:
+    name: 'create-network-test'
+    builders:
+      - create-network:
+          env: 'test'
+          next-job: '{next-job}'
+
+- job-template:
+    name: 'create-network-production'
+    builders:
+      - create-network:
+          env: 'production'
+
+- builder:
+    name: 'vulcand-deploy'
+    builders:
+      - shell: |
+          #!/bin/bash
+          set -x
+          #set -e
+          #export DOCKER_HOST=${{DOCKER_HOST}}
+          unset DOCKER_HOST
+          export HOST_IP={host}
+          export ENV={env}
+
+          docker run --net={env} -d --expose 8182 --expose 8181 \
+            --name vulcand-{env}-{host} \
+            mailgun/vulcand:v0.8.0-beta.2 \
+            /go/bin/vulcand -apiInterface=0.0.0.0 \
+            -logSeverity=DEBUG \
+            --etcd=http://etcd-{env}:4001
+
+- job-template:
+    name: 'vulcand-deploy-test'
+    builders:
+      - vulcand-deploy:
+          env: 'test'
+          host: '{host}'
+
+- job-template:
+    name: 'vulcand-deploy-production'
+    builders:
+      - vulcand-deploy:
+          env: 'production'
+          host: '{host}'
+
+- builder:
+    name: 'etcd-deploy'
+    builders:
+      - shell: |
+          #!/bin/bash
+          set -x
+          #set -e
+          #export DOCKER_HOST=${{DOCKER_HOST}}
+          unset DOCKER_HOST
+          export HOST_IP={host}
+          export ENV={env}
+
+          docker run --net={env} -d --expose 4001 --expose 2380 --expose 2379 \
+           --name etcd-{env} quay.io/coreos/etcd:v2.0.3 \
+           -name etcd-{env}-{host} \
+           -advertise-client-urls http://${{HOST_IP}}:2379,http://${{HOST_IP}}:4001 \
+           -listen-client-urls http://0.0.0.0:2379,http://0.0.0.0:4001 \
+           -initial-advertise-peer-urls http://${{HOST_IP}}:2380 \
+           -listen-peer-urls http://0.0.0.0:2380 \
+           -initial-cluster-token etcd-cluster-1 \
+           -initial-cluster etcd-{env}-{host}=http://${{HOST_IP}}:2380 \
+           -initial-cluster-state new
+
+- job-template:
+    name: 'etcd-deploy-test'
+    builders:
+      - etcd-deploy:
+          env: 'test'
+          host: '{host}'
+
+- job-template:
+    name: 'etcd-deploy-production'
+    builders:
+      - etcd-deploy:
+          env: 'production'
+          host: '{host}'
+
+- job-template:
+    name: 'start-infra-test'
+
+- job-template:
+    name: 'start-infra-production'
+
+- project:
+    name: infra-test
+    jobs:
+      - 'start-infra-test':
+          pipeline-stage: 'test'
+          next-job: 'create-network-test'
+      - 'create-network-test':
+          pipeline-stage: 'test'
+          next-job: 'etcd-deploy-test'
+      - 'etcd-deploy-test':
+          pipeline-stage: 'test'
+          host: '172.19.0.2'
+          next-job: 'vulcand-deploy-test'
+      - 'vulcand-deploy-test':
+          pipeline-stage: 'test'
+          host: '172.19.0.2'
+          next-job: 'done'
+
+- project:
+    name: infra-production
+    jobs:
+      - 'start-infra-production':
+          pipeline-stage: 'production'
+          next-job: 'create-network-production'
+      - 'create-network-production':
+          pipeline-stage: 'production'
+          next-job: 'etcd-deploy-production'
+      - 'etcd-deploy-production':
+          pipeline-stage: 'production'
+          host: '172.20.0.2'
+          next-job: 'vulcand-deploy-production'
+      - 'vulcand-deploy-production':
+          pipeline-stage: 'production'
+          host: '172.20.0.2'
+          next-job: 'done'
