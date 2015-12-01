@@ -26,5 +26,5 @@
 - name: Add (vagrant) ssh key
   copy: src=insecure_private_key dest={{ playbook_dir }}/build/jenkins_home/.ssh/id_rsa mode=0600
 
-- name: Copy coreos support scripts
-  copy: src=collect-endpoints.sh dest={{ playbook_dir }}/build/bin/ mode=755
+# - name: Copy coreos support scripts
+#   copy: src=collect-endpoints.sh dest={{ playbook_dir }}/build/bin/ mode=755

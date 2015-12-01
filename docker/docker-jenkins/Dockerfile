@@ -40,11 +40,8 @@ RUN cat plugins.txt | while read line; do \
 # Expose the jenkins dir as a volume
 VOLUME /var/lib/jenkins
 
-# Add configuration files
+# Add configuration file
 ADD jenkins_home $TEMP_JENKINS_CONF/
-#ADD jenkins_home/.ssh /root/.ssh/
-#ADD jenkins_home/.dockercfg /root/
-ADD bin/* /usr/bin/
 
 EXPOSE 8080
 ENTRYPOINT cp -ra $TEMP_JENKINS_CONF/* $JENKINS_HOME/ && java -jar /opt/jenkins.war

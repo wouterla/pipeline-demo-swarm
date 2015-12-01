@@ -6,14 +6,24 @@
           #!/bin/bash
           set -x
           set -e
-          #export DOCKER_HOST=${{DOCKER_HOST}}
-          unset DOCKER_HOST
+          if {target-swarm-master};
+            # Point to correct docker endpoint
+            eval $(docker-machine env {target-swarm-master});
+            echo "using environment: ";
+            docker-machine env {target-swarm-master};
+
+            # Use overlay network
+            export USE_OVERLAY="--driver overlay"
+          else
+            unset DOCKER_HOST;
+            echo "using local docker socket"
+          fi;
 
           if docker network inspect {env};
           then
             echo "network {env} Found";
           else
-            docker network create {env};
+            docker network create ${{USE_OVERLAY}} {env};
           fi;
 
 - job-template:
@@ -35,17 +45,26 @@
       - shell: |
           #!/bin/bash
           set -x
-          #set -e
-          #export DOCKER_HOST=${{DOCKER_HOST}}
-          unset DOCKER_HOST
-          export HOST_IP={host}
+          set -e
+          if {target-swarm-master};
+            # Point to correct docker endpoint
+            eval $(docker-machine env {target-swarm-master});
+            echo "using environment: ";
+            docker-machine env {target-swarm-master};
+
+            # Use overlay network
+            export USE_OVERLAY="--driver overlay"
+          else
+            unset DOCKER_HOST;
+            echo "using local docker socket"
+          fi;
           export ENV={env}
 
           docker run --net={env} -d --expose 8182 --expose 8181 \
             --name vulcand-{env}-{host} \
             mailgun/vulcand:v0.8.0-beta.2 \
             /go/bin/vulcand -apiInterface=0.0.0.0 \
-            -logSeverity=DEBUG \
+            -logSeverity=INFO \
             --etcd=http://etcd-{env}:4001
 
 - job-template:
@@ -68,9 +87,19 @@
       - shell: |
           #!/bin/bash
           set -x
-          #set -e
-          #export DOCKER_HOST=${{DOCKER_HOST}}
-          unset DOCKER_HOST
+          set -e
+          if {target-swarm-master};
+            # Point to correct docker endpoint
+            eval $(docker-machine env {target-swarm-master});
+            echo "using environment: ";
+            docker-machine env {target-swarm-master};
+
+            # Use overlay network
+            export USE_OVERLAY="--driver overlay"
+          else
+            unset DOCKER_HOST;
+            echo "using local docker socket"
+          fi;
           export HOST_IP={host}
           export ENV={env}
 

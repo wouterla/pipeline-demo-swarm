@@ -28,3 +28,4 @@ jquery:latest
 copyartifact:latest
 matrix-project:latest
 maven-plugin:latest
+slack:latest
