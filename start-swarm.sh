@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# VBoxManage hostonlyif remove vboxnet
 set -e
 
 # Docker Machine Setup
@@ -13,7 +13,7 @@ docker $(docker-machine config consul-machine) run -d \
   -h "consul" \
   progrium/consul -server -bootstrap
 
-#$(docker-machine config mhl-consul)
+eval $(docker-machine env consul-machine)
 export TOKEN=$(docker run swarm create)
 
 docker-machine create -d virtualbox \
