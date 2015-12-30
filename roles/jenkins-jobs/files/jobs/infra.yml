@@ -32,20 +32,24 @@
       - create-network:
           env: 'test'
           next-job: '{next-job}'
+          target-swarm-master: '{target-swarm-master}'
+
 
 - job-template:
     name: 'create-network-production'
     builders:
       - create-network:
           env: 'production'
+          target-swarm-master: '{target-swarm-master}'
 
 - builder:
-    name: 'vulcand-deploy'
+    name: 'fabio-deploy'
     builders:
       - shell: |
           #!/bin/bash
           set -x
           set -e
+          export ENV={env}
           if {target-swarm-master};
             # Point to correct docker endpoint
             eval $(docker-machine env {target-swarm-master});
@@ -60,73 +64,21 @@
           fi;
           export ENV={env}
 
-          docker run --net={env} -d --expose 8182 --expose 8181 \
-            --name vulcand-{env}-{host} \
-            mailgun/vulcand:v0.8.0-beta.2 \
-            /go/bin/vulcand -apiInterface=0.0.0.0 \
-            -logSeverity=INFO \
-            --etcd=http://etcd-{env}:4001
+          docker run --net={env} -d -p 80:80 -p 9998:9998 -v wouterla/docker-fabio
 
 - job-template:
-    name: 'vulcand-deploy-test'
+    name: 'fabio-deploy-test'
     builders:
-      - vulcand-deploy:
+      - fabio-deploy:
           env: 'test'
-          host: '{host}'
+          target-swarm-master: '{target-swarm-master}'
 
 - job-template:
-    name: 'vulcand-deploy-production'
+    name: 'fabio-deploy-production'
     builders:
-      - vulcand-deploy:
+      - fabio-deploy:
           env: 'production'
-          host: '{host}'
-
-- builder:
-    name: 'etcd-deploy'
-    builders:
-      - shell: |
-          #!/bin/bash
-          set -x
-          set -e
-          if {target-swarm-master};
-            # Point to correct docker endpoint
-            eval $(docker-machine env {target-swarm-master});
-            echo "using environment: ";
-            docker-machine env {target-swarm-master};
-
-            # Use overlay network
-            export USE_OVERLAY="--driver overlay"
-          else
-            unset DOCKER_HOST;
-            echo "using local docker socket"
-          fi;
-          export HOST_IP={host}
-          export ENV={env}
-
-          docker run --net={env} -d --expose 4001 --expose 2380 --expose 2379 \
-           --name etcd-{env} quay.io/coreos/etcd:v2.0.3 \
-           -name etcd-{env}-{host} \
-           -advertise-client-urls http://${{HOST_IP}}:2379,http://${{HOST_IP}}:4001 \
-           -listen-client-urls http://0.0.0.0:2379,http://0.0.0.0:4001 \
-           -initial-advertise-peer-urls http://${{HOST_IP}}:2380 \
-           -listen-peer-urls http://0.0.0.0:2380 \
-           -initial-cluster-token etcd-cluster-1 \
-           -initial-cluster etcd-{env}-{host}=http://${{HOST_IP}}:2380 \
-           -initial-cluster-state new
-
-- job-template:
-    name: 'etcd-deploy-test'
-    builders:
-      - etcd-deploy:
-          env: 'test'
-          host: '{host}'
-
-- job-template:
-    name: 'etcd-deploy-production'
-    builders:
-      - etcd-deploy:
-          env: 'production'
-          host: '{host}'
+          target-swarm-master: '{target-swarm-master}'
 
 - job-template:
     name: 'start-infra-test'
@@ -136,36 +88,28 @@
 
 - project:
     name: infra-test
+    target-swarm-master: 'swarm-master'
     jobs:
       - 'start-infra-test':
           pipeline-stage: 'test'
           next-job: 'create-network-test'
       - 'create-network-test':
           pipeline-stage: 'test'
-          next-job: 'etcd-deploy-test'
-      - 'etcd-deploy-test':
+          next-job: 'fabio-deploy-test'
+      - 'fabio-deploy-test':
           pipeline-stage: 'test'
-          host: '172.19.0.2'
-          next-job: 'vulcand-deploy-test'
-      - 'vulcand-deploy-test':
-          pipeline-stage: 'test'
-          host: '172.19.0.2'
           next-job: 'done'
 
 - project:
     name: infra-production
+    target-swarm-master: 'swarm-master'
     jobs:
       - 'start-infra-production':
           pipeline-stage: 'production'
           next-job: 'create-network-production'
       - 'create-network-production':
           pipeline-stage: 'production'
-          next-job: 'etcd-deploy-production'
-      - 'etcd-deploy-production':
+          next-job: 'fabio-deploy-production'
+      - 'fabio-deploy-production':
           pipeline-stage: 'production'
-          host: '172.20.0.2'
-          next-job: 'vulcand-deploy-production'
-      - 'vulcand-deploy-production':
-          pipeline-stage: 'production'
-          host: '172.20.0.2'
           next-job: 'done'

@@ -6,6 +6,8 @@
 #build_docker_jenkins_slave_php.sh
 #build_docker_jenkins_slave_java.sh
 
+eval $(docker-machine env swarm-master)
+
 # Create 'build' network
 if docker network inspect build;
 then
@@ -18,7 +20,7 @@ fi;
 docker run -d --net=build \
   -v /home/vagrant/.m2:/root/.m2 \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  --expose 8080 \
+  -p 8080:8080 \
   --name jenkins wouterla/docker-jenkins
 # Bootstrap Jenkins Jobs
 docker run --net=build wouterla/docker-jenkins-job-builder

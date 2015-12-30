@@ -9,7 +9,7 @@ docker-machine create \
 
 # Run consul
 docker $(docker-machine config consul-machine) run -d \
-  -p "8500:8500" \
+  -p "8500:8500" -p "8302:8302" -p "8301:8301" -p "8300:8300" \
   -h "consul" \
   progrium/consul -server -bootstrap
 

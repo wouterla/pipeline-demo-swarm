@@ -25,3 +25,7 @@ NEXT:
 - create network (multi host) per environment
 - add local registry so we can push?
 - remove vagrant credentials from jenkins?
+
+
+
+build docker image -> deploy to test -> <test> -> release on test -> deploy to production -> <test> -> release on production

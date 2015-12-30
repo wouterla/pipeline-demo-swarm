@@ -13,4 +13,4 @@ cd build
 docker build -t wouterla/docker-jenkins-job-builder .
 
 echo "Pushing docker image to repository"
-#docker push wouterla/docker-jenkins-job-builder
+docker push wouterla/docker-jenkins-job-builder
