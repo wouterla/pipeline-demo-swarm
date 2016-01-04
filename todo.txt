@@ -1,24 +1,25 @@
 TODO
 
-- Manual steps first to full env, then jenkins!
+# - Manual steps first to full env, then jenkins!
 
-- create network (single host) per environment --> script, done
+# - create network (single host) per environment --> script, done
   check network connect?
-- deploy etcd for an env --> done
-- deploy vulcand for an env --> done
-- deploy petclinic for an env --> done
-- add petclinic to vulcand --> done
+#- deploy etcd for an env --> done
+#- deploy vulcand for an env --> done
+#- deploy petclinic for an env --> done
+#- add petclinic to vulcand --> done
 
 
-- add extra env (acc) and deploy all --> done
+# - add extra env (acc) and deploy all --> done
 
-- add 'build' env for jenkins
-- deploy jenkins
-- bootstrap jenkins-jobs
-- provide access to other networks for jenkins (docker host)
-- full pipeline view
+#- add 'build' env for jenkins
+#- deploy jenkins
+#- bootstrap jenkins-jobs
+#- provide access to other networks for jenkins (docker host)
+#- full pipeline view
 
 NEXT:
+- Local docker repo / cache
 - run a test on petclinic
 - create multi-host setup using docker-machine
   - configure IPs for hosts in jenkins (DOCKER_HOST, vulcan/etcd IPs will need to bind ports again? Or is that transparent?)
@@ -26,6 +27,31 @@ NEXT:
 - add local registry so we can push?
 - remove vagrant credentials from jenkins?
 
-
-
 build docker image -> deploy to test -> <test> -> release on test -> deploy to production -> <test> -> release on production
+
+NOTES
+=====
+
+start consul on all swarm nodes
+- constraint node==
+- expect size of cluster
+- add all swarm node ips
+- separate consul cluster per docker overlay network
+
+Q: can consul listen on both node ip and docker container ip?
+
+docker run --net=test -d -e constraint:node==swarm-master --expose 8500 --expose 8302 --expose 8301 --expose 8300 --name consul-swarm-master progrium/consul -server -bootstrap-expect 1 -bind=$(dig +short consul-swarm-master)
+
+No dig in consul image, so use:
+grep -m 1 consul-swarm-agent-00 /etc/hosts | cut -f1
+
+Apparently it takes time to populate the /etc/hosts, so we wait,then run
+
+docker exec -t consul-swarm-agent-00 sh -c 'consul join $(grep -m 1 consul-swarm-master /etc/hosts | cut -f1)'
+
+instead of joining in the docker run command for the agent:
+
+docker run --net test -d -e constraint:node==swarm-agent-00 --expose 8500 --expose 8302 --expose 8301 --expose 8300 --name consul-swarm-agent-00 -h consul-swarm-agent-00 progrium/consul -server -bind=$(grep -m 1 consul-swarm-agent-00 /etc/hosts | cut -f1)
+
+
+Start fabio on all nodes, point to node consul instance?
