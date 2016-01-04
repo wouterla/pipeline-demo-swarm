@@ -7,16 +7,17 @@
           set -x
           set -e
           if {target-swarm-master};
-            # Point to correct docker endpoint
+          then
+            # Point to correct docker endpoint;
             eval $(docker-machine env {target-swarm-master});
             echo "using environment: ";
             docker-machine env {target-swarm-master};
 
             # Use overlay network
-            export USE_OVERLAY="--driver overlay"
+            export USE_OVERLAY="--driver overlay";
           else
             unset DOCKER_HOST;
-            echo "using local docker socket"
+            echo "using local docker socket";
           fi;
 
           if docker network inspect {env};
@@ -34,13 +35,68 @@
           next-job: '{next-job}'
           target-swarm-master: '{target-swarm-master}'
 
-
 - job-template:
     name: 'create-network-production'
     builders:
       - create-network:
           env: 'production'
           target-swarm-master: '{target-swarm-master}'
+
+- builder:
+    name: 'start-consul'
+    builders:
+      - shell: |
+          #!/bin/bash
+          set -x
+          set -e
+          export ENV={env}
+          MASTER=$(docker-machine active)
+          # Get all swarm machines
+          MACHINES=$(docker-machine ls -q | grep swarm)
+          # Start consul on all machines
+          for MACHINE in ${{MACHINES}};
+          do
+            if [ ${{MACHINE}} == ${{MASTER}} ];
+            then
+              docker run --net=${{ENV}} -d -e constraint:node==${{MACHINE}} \
+                --expose 8500 --expose 8302 --expose 8301 --expose 8300 \
+                --name consul-${{MACHINE}} \
+                -h consul-${{MACHINE}} \
+                progrium/consul \
+                  -server \
+                  -bootstrap-expect 1 \
+                  -bind=$(grep -m 1 consul-${{MACHINE}} /etc/hosts | cut -f1);
+            else
+              docker run --net=${{ENV}} -d -e constraint:node==${{MACHINE}} \
+                --expose 8500 --expose 8302 --expose 8301 --expose 8300 \
+                --name consul-${{MACHINE}} \
+                -h consul-${{MACHINE}} \
+                progrium/consul \
+                  -server \
+                  -bind=$(grep -m 1 consul-${{MACHINE}} /etc/hosts | cut -f1);
+            fi;
+          done;
+          # Join the non-bootstrap consuls to the bootstrap ones
+          for MACHINE in ${{MACHINES}};
+          do
+            if [ ${{MACHINE}} != ${{MASTER}} ];
+            then
+              docker exec -t consul-${{MACHINE}} sh -c 'consul join $(grep -m 1 consul-${{MACHINE}} /etc/hosts | cut -f1)';
+            fi;
+          done;
+
+
+- job-template:
+    name: 'start-consul-production'
+    builders:
+      - start-consul:
+          env: 'production'
+
+- job-template:
+    name: 'start-consul-test'
+    builders:
+      - start-consul:
+          env: 'test'
 
 - builder:
     name: 'fabio-deploy'
@@ -64,7 +120,13 @@
           fi;
           export ENV={env}
 
-          docker run --net={env} -d -p 80:80 -p 9998:9998 -v wouterla/docker-fabio
+          # Generate fabio conf file w/ properties for consul set to host consul-[swarm host name].[env]
+          # wrap in container, push (separate job? not needed every time?)
+
+          docker run --net={env} -d \
+            -p 80:80 -p 9998:9998 \
+            -v $PWD/fabio/fabio.properties:/etc/fabio/fabio.properties \
+            magiconair/fabio
 
 - job-template:
     name: 'fabio-deploy-test'
@@ -95,6 +157,10 @@
           next-job: 'create-network-test'
       - 'create-network-test':
           pipeline-stage: 'test'
+          next-job: 'start-consul-test'
+      - 'start-consul-test':
+          pipeline-stage: 'test'
+          env: 'test'
           next-job: 'fabio-deploy-test'
       - 'fabio-deploy-test':
           pipeline-stage: 'test'
@@ -109,6 +175,10 @@
           next-job: 'create-network-production'
       - 'create-network-production':
           pipeline-stage: 'production'
+          next-job: 'start-consul-production'
+      - 'start-consul-production':
+          pipeline-stage: 'test'
+          env: 'production'
           next-job: 'fabio-deploy-production'
       - 'fabio-deploy-production':
           pipeline-stage: 'production'
