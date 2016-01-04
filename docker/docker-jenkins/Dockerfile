@@ -17,6 +17,10 @@ RUN tar xzf etcd-$ETCD_VER-linux-amd64.tar.gz
 RUN cp -f etcd-$ETCD_VER-linux-amd64/etcdctl /usr/bin
 RUN rm -rf etcd-$ETCD_VER-linux-amd64*
 
+# Install docker-machine
+RUN curl -L https://github.com/docker/machine/releases/download/v0.5.3/docker-machine_linux-amd64 >/usr/local/bin/docker-machine && \
+    chmod +x /usr/local/bin/docker-machine
+
 # Install Jenkins
 ENV JENKINS_HOME /var/lib/jenkins
 ENV TEMP_JENKINS_CONF /tmp/jenkins
