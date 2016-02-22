@@ -1,4 +1,3 @@
-
 - builder:
     name: 'create-network'
     builders:
@@ -6,141 +5,86 @@
           #!/bin/bash
           set -x
           set -e
-          if {target-swarm-master};
-          then
-            # Point to correct docker endpoint;
-            eval $(docker-machine env {target-swarm-master});
-            echo "using environment: ";
-            docker-machine env {target-swarm-master};
-
-            # Use overlay network
-            export USE_OVERLAY="--driver overlay";
-          else
-            unset DOCKER_HOST;
-            echo "using local docker socket";
-          fi;
-
-          if docker network inspect {env};
+          if docker ${{DOCKER_HOST}} network inspect {env};
           then
             echo "network {env} Found";
           else
-            docker network create ${{USE_OVERLAY}} {env};
+            docker ${{DOCKER_HOST}} network create {env};
           fi;
-
+          docker ${{DOCKER_HOST}} network connect {env} vulcand
 - job-template:
     name: 'create-network-test'
     builders:
       - create-network:
           env: 'test'
           next-job: '{next-job}'
-          target-swarm-master: '{target-swarm-master}'
 
 - job-template:
     name: 'create-network-production'
     builders:
       - create-network:
           env: 'production'
-          target-swarm-master: '{target-swarm-master}'
 
 - builder:
-    name: 'start-consul'
+    name: 'vulcand-deploy'
     builders:
       - shell: |
           #!/bin/bash
           set -x
           set -e
           export ENV={env}
-          MASTER=$(docker-machine active)
-          # Get all swarm machines
-          MACHINES=$(docker-machine ls -q | grep swarm)
-          # Start consul on all machines
-          for MACHINE in ${{MACHINES}};
-          do
-            if [ ${{MACHINE}} == ${{MASTER}} ];
-            then
-              docker run --net=${{ENV}} -d -e constraint:node==${{MACHINE}} \
-                --expose 8500 --expose 8302 --expose 8301 --expose 8300 \
-                --name consul-${{MACHINE}} \
-                -h consul-${{MACHINE}} \
-                progrium/consul \
-                  -server \
-                  -bootstrap-expect 1 \
-                  -bind=$(grep -m 1 consul-${{MACHINE}} /etc/hosts | cut -f1);
-            else
-              docker run --net=${{ENV}} -d -e constraint:node==${{MACHINE}} \
-                --expose 8500 --expose 8302 --expose 8301 --expose 8300 \
-                --name consul-${{MACHINE}} \
-                -h consul-${{MACHINE}} \
-                progrium/consul \
-                  -server \
-                  -bind=$(grep -m 1 consul-${{MACHINE}} /etc/hosts | cut -f1);
-            fi;
-          done;
-          # Join the non-bootstrap consuls to the bootstrap ones
-          for MACHINE in ${{MACHINES}};
-          do
-            if [ ${{MACHINE}} != ${{MASTER}} ];
-            then
-              docker exec -t consul-${{MACHINE}} sh -c 'consul join $(grep -m 1 consul-${{MACHINE}} /etc/hosts | cut -f1)';
-            fi;
-          done;
-
-
+          docker ${{DOCKER_HOST}} run --net={env} -d --expose 8182 --expose 8181 \
+            --name vulcand-{env}-{host} \
+            mailgun/vulcand:v0.8.0-beta.2 \
+            /go/bin/vulcand -apiInterface=0.0.0.0 \
+            -logSeverity=INFO \
+            --etcd=http://etcd-{env}:4001
 - job-template:
-    name: 'start-consul-production'
+    name: 'vulcand-deploy-test'
     builders:
-      - start-consul:
-          env: 'production'
-
-- job-template:
-    name: 'start-consul-test'
-    builders:
-      - start-consul:
+      - vulcand-deploy:
           env: 'test'
+          host: '{host}'
+
+- job-template:
+    name: 'vulcand-deploy-production'
+    builders:
+      - vulcand-deploy:
+          env: 'production'
+          host: '{host}'
 
 - builder:
-    name: 'fabio-deploy'
+    name: 'etcd-deploy'
     builders:
       - shell: |
           #!/bin/bash
           set -x
           set -e
+          export HOST_IP={host}
           export ENV={env}
-          if {target-swarm-master};
-            # Point to correct docker endpoint
-            eval $(docker-machine env {target-swarm-master});
-            echo "using environment: ";
-            docker-machine env {target-swarm-master};
-
-            # Use overlay network
-            export USE_OVERLAY="--driver overlay"
-          else
-            unset DOCKER_HOST;
-            echo "using local docker socket"
-          fi;
-          export ENV={env}
-
-          # Generate fabio conf file w/ properties for consul set to host consul-[swarm host name].[env]
-          # wrap in container, push (separate job? not needed every time?)
-
-          docker run --net={env} -d \
-            -p 80:80 -p 9998:9998 \
-            -v $PWD/fabio/fabio.properties:/etc/fabio/fabio.properties \
-            magiconair/fabio
-
+          docker ${{DOCKER_HOST}} run --net={env} -d --expose 4001 --expose 2380 --expose 2379 \
+           --name etcd-{env} quay.io/coreos/etcd:v2.0.3 \
+           -name etcd-{env}-{host} \
+           -advertise-client-urls http://${{HOST_IP}}:2379,http://${{HOST_IP}}:4001 \
+           -listen-client-urls http://0.0.0.0:2379,http://0.0.0.0:4001 \
+           -initial-advertise-peer-urls http://${{HOST_IP}}:2380 \
+           -listen-peer-urls http://0.0.0.0:2380 \
+           -initial-cluster-token etcd-cluster-1 \
+           -initial-cluster etcd-{env}-{host}=http://${{HOST_IP}}:2380 \
+           -initial-cluster-state new
 - job-template:
-    name: 'fabio-deploy-test'
+    name: 'etcd-deploy-test'
     builders:
-      - fabio-deploy:
+      - etcd-deploy:
           env: 'test'
-          target-swarm-master: '{target-swarm-master}'
+          host: '{host}'
 
 - job-template:
-    name: 'fabio-deploy-production'
+    name: 'etcd-deploy-production'
     builders:
-      - fabio-deploy:
+      - etcd-deploy:
           env: 'production'
-          target-swarm-master: '{target-swarm-master}'
+          host: '{host}'
 
 - job-template:
     name: 'start-infra-test'
@@ -150,36 +94,20 @@
 
 - project:
     name: infra-test
-    target-swarm-master: 'swarm-master'
     jobs:
       - 'start-infra-test':
           pipeline-stage: 'test'
           next-job: 'create-network-test'
       - 'create-network-test':
           pipeline-stage: 'test'
-          next-job: 'start-consul-test'
-      - 'start-consul-test':
-          pipeline-stage: 'test'
-          env: 'test'
-          next-job: 'fabio-deploy-test'
-      - 'fabio-deploy-test':
-          pipeline-stage: 'test'
           next-job: 'done'
 
 - project:
     name: infra-production
-    target-swarm-master: 'swarm-master'
     jobs:
       - 'start-infra-production':
           pipeline-stage: 'production'
           next-job: 'create-network-production'
       - 'create-network-production':
-          pipeline-stage: 'production'
-          next-job: 'start-consul-production'
-      - 'start-consul-production':
-          pipeline-stage: 'test'
-          env: 'production'
-          next-job: 'fabio-deploy-production'
-      - 'fabio-deploy-production':
           pipeline-stage: 'production'
           next-job: 'done'

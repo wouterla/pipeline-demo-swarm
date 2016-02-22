@@ -1,9 +1,6 @@
 - defaults:
     name: petclinic
     project-type: freestyle
-    wrappers:
-      - ssh-agent-credentials:
-          user: 'XXXXXXXXXXXXXX'
     properties:
       - delivery-pipeline:
           stage: '{pipeline-stage}'
@@ -11,6 +8,7 @@
       - git:
           name: origin
           url: '{gitrepo}'
+          credentials-id: 'd2610699-bea9-4b74-8022-1ad70dc3d5e8'
           skip-tag: true
           wipe-workspace: false
           branches:
@@ -53,8 +51,6 @@
           #!/bin/bash
           set -x
           set +e
-          #export DOCKER_HOST=${{DOCKER_HOST}}
-          unset DOCKER_HOST
 
           echo "Clean..."
           rm -rf build && mkdir build
@@ -64,10 +60,10 @@
 
           echo "Running docker"
           cd target/
-          docker build -t wouterla/docker-{name} .
+          docker ${{DOCKER_HOST}} build -t wouterla/docker-{name} .
 
           echo "Pushing docker image to repository"
-          #docker push wouterla/docker-{name}
+          #docker ${{DOCKER_HOST}} push wouterla/docker-{name}
 
 - builder:
     name: deploy
@@ -77,24 +73,22 @@
           #!/bin/bash
           set -x
           set +e
-          #export DOCKER_HOST=${{DOCKER_HOST}}
-          unset DOCKER_HOST
 
           # Ensure network exists
 
-          if docker network inspect {env};
+          if docker ${{DOCKER_HOST}} network inspect {env};
           then
             echo "network {env} Found";
           else
-            docker network create {env};
+            docker ${{DOCKER_HOST}} network create {env};
           fi;
 
           # For now, ensure that the container is removed. Should not be done in
           # production, but makes testing the pipeline much easier
-          docker stop {name}-{env}-${{PIPELINE_GIT_HASH}}
-          docker rm  {name}-{env}-${{PIPELINE_GIT_HASH}}
+          docker ${{DOCKER_HOST}} stop {name}-{env}-${{PIPELINE_GIT_HASH}}
+          docker ${{DOCKER_HOST}} rm  {name}-{env}-${{PIPELINE_GIT_HASH}}
 
-          docker run --net={env} -d --expose 8080 \
+          docker ${{DOCKER_HOST}} run --net={env} -d --expose 8080 \
             --label servicename={name} \
             --label serviceversion=${{PIPELINE_GIT_HASH}} \
             --label serviceenv={env} \
@@ -123,18 +117,18 @@
           #!/bin/bash
           set -x
           set -e
-          #export DOCKER_HOST=${{DOCKER_HOST}}
-          unset DOCKER_HOST
+
           export BACKEND={name}-{env}-${{PIPELINE_GIT_HASH}}
           export ENV={env}
-          export ETCDCTL_PEERS=http://etcd-{env}.{env}:4001
+          #export ETCDCTL_PEERS=http://etcd-{env}.{env}:4001
+          export ETCDCTL_PEERS=${{DOCKER_IP}}:4001
           echo "BACKEND=${{BACKEND}}"
 
           # Temporarily connect to the {env} network so we can talk to etcd
           # Could be replaced by a pre-configured ip address for test, but
           # that would be less flexible.
           set +e # If this fails, we're already connected?
-          docker network connect {env} jenkins
+          docker ${{DOCKER_HOST}} network connect {env} jenkins
           set -e
 
           # Ensure backend exists
@@ -143,15 +137,15 @@
           # Add new servers
           # Gather endpoints
           # Find all containers with the service and versions labels we want
-          CONTAINERS=$(docker ps --filter=label=servicename={name} \
+          CONTAINERS=$(docker ${{DOCKER_HOST}} ps --filter=label=servicename={name} \
             --filter=label=serviceversion=${{PIPELINE_GIT_HASH}} \
             --filter=label=serviceenv={env} \
             --format={{{{.ID}}}})
 
           COUNT=0
           for CONTAINER in $CONTAINERS; do
-            IP=$(docker inspect --format='{{{{json .NetworkSettings.Networks.{env}.IPAddress}}}}' $CONTAINER | tr -d '"')
-            #PORT=$(docker inspect --format='{{{{(index (index .NetworkSettings.Ports "8080/tcp") 0).HostPort}}}}' $CONTAINER)
+            IP=$(docker ${{DOCKER_HOST}} inspect --format='{{{{json .NetworkSettings.Networks.{env}.IPAddress}}}}' $CONTAINER | tr -d '"')
+            #PORT=$(docker ${{DOCKER_HOST}} inspect --format='{{{{(index (index .NetworkSettings.Ports "8080/tcp") 0).HostPort}}}}' $CONTAINER)
             PORT=8080
 
             echo "Adding $CONTAINER with IP=$IP and PORT=$PORT as server for {name}, ${{PIPELINE_GIT_HASH}}"
@@ -166,7 +160,7 @@
           # Above should be extended to "Route": "Host("<servicename>") && PathRegexp(\"/.*\")" ? And also add Method (GET/POST)?
 
           # Disconnect from {env} network again
-          docker network disconnect {env} jenkins
+          docker ${{DOCKER_HOST}} network disconnect {env} jenkins
 
 - job-template:
     name: '{name}-release-test'

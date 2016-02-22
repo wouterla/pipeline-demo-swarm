@@ -7,6 +7,7 @@
 #build_docker_jenkins_slave_java.sh
 
 eval $(docker-machine env swarm-master)
+docker-machine env swarm-master
 
 # Create 'build' network
 if docker network inspect build;
@@ -16,10 +17,13 @@ else
   docker network create build;
 fi;
 
+DOCKER_IP=$(docker-machine ip swarm-master)
+
 # Start Jenkins
 docker run -d --net=build \
-  -v /home/vagrant/.m2:/root/.m2 \
-  -v /var/run/docker.sock:/var/run/docker.sock \
+  --env DOCKER_IP="${DOCKER_IP}" \
+  --env DOCKER_HOST="--tlsverify --tlscacert=/root/docker_files/machine/certs/ca.pem --tlscert=/root/docker_files/machine/certs/cert.pem --tlskey=/root/docker_files/machine/certs/key.pem -H=tcp://${DOCKER_IP}:2376" \
+  -v $HOME/.docker:/root/docker_files:ro \
   -p 8080:8080 \
   --name jenkins wouterla/docker-jenkins
 # Bootstrap Jenkins Jobs
