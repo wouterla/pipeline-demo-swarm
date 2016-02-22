@@ -23,12 +23,12 @@ docker-machine create -d virtualbox \
   --engine-opt="cluster-advertise=eth1:2376" \
   swarm-master
 
-docker-machine create -d virtualbox \
-  --swarm --swarm-image="swarm" \
-  --swarm-discovery="consul://$(docker-machine ip consul-machine):8500" \
-  --engine-opt="cluster-store=consul://$(docker-machine ip consul-machine):8500" \
-  --engine-opt="cluster-advertise=eth1:2376" \
-  swarm-agent-00
+# docker-machine create -d virtualbox \
+#   --swarm --swarm-image="swarm" \
+#   --swarm-discovery="consul://$(docker-machine ip consul-machine):8500" \
+#   --engine-opt="cluster-store=consul://$(docker-machine ip consul-machine):8500" \
+#   --engine-opt="cluster-advertise=eth1:2376" \
+#   swarm-agent-00
 
   ## Let's not start another one, to save memory
   # docker-machine create -d virtualbox \
@@ -40,5 +40,8 @@ docker-machine create -d virtualbox \
 
 eval $(docker-machine env --swarm swarm-master)
 docker info
+
+# Get just nodes in swarm
+docker run --rm swarm list consul://$(docker-machine ip consul-machine):8500
 
 docker network create --driver overlay build
