@@ -14,8 +14,11 @@
     - src: hudson.tasks.Maven.xml
       dest: hudson.tasks.Maven.xml
 
-- name: Copy credentials.xml file
-  copy: src=credentials.xml dest={{ playbook_dir }}/build/jenkins_home/
+- name: Copy config files
+  copy: src={{ item }} dest={{ playbook_dir }}/build/jenkins_home/
+  with_items:
+    - .last_exec_version
+    - upgraded
 
 #- name: Set dockercfg file
 #  copy: src=dockercfg dest={{ playbook_dir }}/build/jenkins_home/.dockercfg

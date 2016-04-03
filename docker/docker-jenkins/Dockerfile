@@ -26,7 +26,7 @@ ENV JENKINS_HOME /var/lib/jenkins
 ENV TEMP_JENKINS_CONF /tmp/jenkins
 ENV JENKINS_UC http://ftp.nluug.nl/programming/jenkins
 
-RUN curl -L ${JENKINS_UC}/war/latest/jenkins.war -o /opt/jenkins.war
+RUN curl -L ${JENKINS_UC}/war-rc/2.0/jenkins.war -o /opt/jenkins.war
 
 # Add configuration for jenkins and plugins
 RUN mkdir -p $JENKINS_HOME

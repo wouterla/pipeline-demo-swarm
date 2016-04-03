@@ -10,7 +10,7 @@ cp docker/docker-jenkins/* build/
 
 echo "Running docker"
 cd build
-docker build -t wouterla/docker-jenkins .
+docker build -t wouterla/docker-jenkins:2.0 .
 
 echo "Pushing docker image to repository"
-docker push wouterla/docker-jenkins
+docker push wouterla/docker-jenkins:2.0

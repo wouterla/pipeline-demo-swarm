@@ -25,6 +25,6 @@ docker run -d --net=build \
   --env DOCKER_HOST="--tlsverify --tlscacert=/root/docker_files/machine/certs/ca.pem --tlscert=/root/docker_files/machine/certs/cert.pem --tlskey=/root/docker_files/machine/certs/key.pem -H=tcp://${DOCKER_IP}:2376" \
   -v $HOME/.docker:/root/docker_files:ro \
   -p 8080:8080 \
-  --name jenkins wouterla/docker-jenkins
+  --name jenkins wouterla/docker-jenkins:2.0
 # Bootstrap Jenkins Jobs
-docker run --net=build wouterla/docker-jenkins-job-builder
+#docker run --net=build wouterla/docker-jenkins-job-builder
